@@ -3,11 +3,13 @@ using UnityEngine.UI;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine.SceneManagement;
 
 public class ButtonFlag
 {
     public bool putBlue;
     public bool putRed;
+    public bool putObstacle;
     public bool orderMove;
     public bool orderAttack;
     public bool orderStay;
@@ -20,6 +22,7 @@ public class ButtonFlag
     {
         putBlue = false;
         putRed = false;
+        putObstacle = false;
         orderMove = false;
         orderAttack = false;
         orderStay = false;
@@ -69,6 +72,11 @@ public class GameController : MonoBehaviour {
         textInfo.text = "";
         //testFlag = true;
     }
+
+    public void ClearAll()
+    {
+        SceneManager.LoadScene("main");
+    }
     
     /// <summary>
     /// 响应放置单位按键
@@ -82,10 +90,15 @@ public class GameController : MonoBehaviour {
             buttonFlag.putBlue = true;
             textInfo.text = "Putting Blue";
         }
-        else
+        else if (type == 2)
         {
             buttonFlag.putRed = true;
             textInfo.text = "Putting Red";
+        }
+        else if (type == 0)
+        {
+            buttonFlag.putObstacle = true;
+            textInfo.text = "Putting Obstacle";
         }
     }
 
@@ -127,10 +140,11 @@ public class GameController : MonoBehaviour {
             map.SetUnit(unit.position, unit);
             units.Add(unit);
         }
-        foreach (var unit in units) map.UpgradeMoveRange(unit);
-            
-           
-        
+        foreach (var unit in units)
+        {
+            map.UpgradeMoveRange(unit);
+            map.UpgradeAttackRange(unit);
+        }
         //map.SetTileUnit(units);
     }
 
@@ -145,7 +159,8 @@ public class GameController : MonoBehaviour {
         var coordinate = map.TileToCoordinate(position);
         //Debug.Log(coordinate);
         var unit = (Unit)Instantiate(unitType[unitName], new Vector3(coordinate.x, 0, coordinate.y), Quaternion.identity);
-        unit.position = position;
+        if (unit.unitName == "Obstacle") map.SetObstacle(position);
+        else unit.position = position;
         UpgradeAllUnits();
     }
     Vector2 GetPointedTile()
@@ -168,8 +183,11 @@ public class GameController : MonoBehaviour {
                 {
                     map.ClearCover("PathMarker");
                     path = map.FindPath(unitSelected, pointedTile);
-                    var pathList = path.Select(x => x.Value).ToList();
-                    map.DrawCover(pathList, CoverType.Path);
+                    if (path != null && path.Count != 0)
+                    {
+                        var pathList = path.Select(x => x.Value).ToList();
+                        map.DrawCover(pathList, CoverType.Path);
+                    }
                 }
             }
             //Debug.Log(pointedTile);
@@ -225,18 +243,20 @@ public class GameController : MonoBehaviour {
         map.ClearCover("PathMarker");
         unitSelected = null;
         var tile = map.GetTile(pointedTile);
-        if (buttonFlag.putRed == true || buttonFlag.putBlue == true)
+        if (buttonFlag.putRed == true || buttonFlag.putBlue == true || buttonFlag.putObstacle == true)
         {
             //放置单位
             if (tile.unit != null)
             {
                 textInfo.text = "Occupied!";
+                buttonFlag.ClearAllFlag();
                 return;
             }
             else
             {
                 if (buttonFlag.putRed == true) SetUnit(pointedTile, "UnitRed");
-                if (buttonFlag.putBlue == true) SetUnit(pointedTile, "UnitBlue");
+                else if (buttonFlag.putBlue == true) SetUnit(pointedTile, "UnitBlue");
+                else if (buttonFlag.putObstacle == true) SetUnit(pointedTile, "Obstacle");
                 textInfo.text = "";
             }
             buttonFlag.ClearAllFlag();

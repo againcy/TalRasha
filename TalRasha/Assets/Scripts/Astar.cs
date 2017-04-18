@@ -141,7 +141,7 @@ public static class Astar
 
                 if (xNext < 0 || xNext >= lengthX || zNext < 0 || zNext >= lengthZ) continue;//超越地图边界
                 if (tiles[xNext, zNext].unit != null && tiles[xNext, zNext].unit.playerID != unit.playerID) continue;
-                var GNext = cur.G + tiles[xNext, zNext].movementCost;
+                var GNext = cur.G + tiles[xNext, zNext].MovementCost(unit);
                 if (GNext > unit.movement) continue;//移动力无法到达
                 if (IsInCloseList(xNext, zNext) == true) continue;
                 if (IsInOpenList(xNext, zNext) == false)

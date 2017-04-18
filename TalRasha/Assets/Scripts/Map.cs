@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 
 public enum TileType { Empty, Grass, Forest }
@@ -11,14 +12,21 @@ public class Tile
 {
     public TileType type;
     //public bool hasUnit;
-    public int movementCost;
+    //public int movementCost;
     public Unit unit;
+    public bool obstacle;
     public Tile()
     {
         type = TileType.Empty;
         unit = null;
+        obstacle = false;
         //hasUnit = false;
-        movementCost = 1;
+        //movementCost = 1;
+    }
+    public int MovementCost(Unit unit)
+    {
+        if (obstacle == true) return 1000;
+        return 1;
     }
 }
 public class Map : MonoBehaviour {
@@ -28,6 +36,7 @@ public class Map : MonoBehaviour {
     public GameObject coverAttack;
     public GameObject coverPath;
 
+    private LayerMask maskObstacle;
     private const float tileSize = 1.0f;
     private float offsetX, offsetZ;
     private Tile[,] tiles;
@@ -41,14 +50,15 @@ public class Map : MonoBehaviour {
             {
                 tiles[i, j] = new Tile();
             }
-	}
+        maskObstacle = 1 << LayerMask.NameToLayer("Obstacle");
+    }
 
     public void ClearTileUnit()
     {
         for (int i = 0; i < lengthX; i++)
             for (int j = 0; j < lengthZ; j++)
             {
-                tiles[i, j].unit = null;
+                RemoveUnit(new Vector2(i, j));
             }
     }
     public void DebugUnitTile()
@@ -74,6 +84,13 @@ public class Map : MonoBehaviour {
         return new Vector2(x, z);
     }
 
+    public void SetObstacle(Vector2 position)
+    {
+        var idx = Mathf.FloorToInt(position.x);
+        var idz = Mathf.FloorToInt(position.y);
+        tiles[idx, idz].obstacle = true;
+    }
+
     public void SetUnit(Vector2 position, Unit unit)
     {
         var idx = Mathf.FloorToInt(position.x);
@@ -81,10 +98,10 @@ public class Map : MonoBehaviour {
         tiles[idx, idz].unit = unit;
     }
 
-    public void RemoveUnit(Vector2 position, Unit unit)
+    public void RemoveUnit(Vector2 position)
     {
-        var idx = Mathf.FloorToInt(position.x);
-        var idz = Mathf.FloorToInt(position.y);
+        var idx = (int)position.x;
+        var idz = (int)position.y;
         tiles[idx, idz].unit = null;
     }
     public Tile GetTile(Vector2 tilePosition)
@@ -147,6 +164,7 @@ public class Map : MonoBehaviour {
             }
         var curx = Mathf.FloorToInt(unit.position.x);
         var curz = Mathf.FloorToInt(unit.position.y);
+        visited[curx, curz] = 1;
         //movement
         var queue = new Queue<Vector3>();//<x,y>坐标 z:剩余movement
         queue.Enqueue(new Vector3(unit.position.x, unit.position.y, unit.movement));
@@ -184,7 +202,7 @@ public class Map : MonoBehaviour {
                 if (xNext < 0 || xNext >= lengthX || zNext < 0 || zNext >= lengthZ) continue;
                 if (tiles[xNext, zNext].unit != null && tiles[xNext, zNext].unit.playerID != unit.playerID) continue;
                 if (visited[xNext, zNext] != 0) continue;
-                var nextMove = move - tiles[xNext,zNext].movementCost;
+                var nextMove = move - tiles[xNext,zNext].MovementCost(unit);
                 if (nextMove < 0) continue;
                 visited[xNext, zNext] = 1;
                 if (nextMove != 0) queue.Enqueue(new Vector3(xNext, zNext, nextMove));
@@ -200,13 +218,41 @@ public class Map : MonoBehaviour {
         //Debug.Log("unit upgrade range " + movementTiles.Count);
     }
 
+    /// <summary>
+    /// 更新单位的攻击范围
+    /// </summary>
+    /// <param name="unit"></param>
     public void UpgradeAttackRange(Unit unit)
     {
-        foreach(var cell in unit.MovementTiles)
+        unit.AttackTiles = new List<Vector2>();
+        foreach (var cell in unit.MovementTiles)
         {
-
+            int xOrigin = (int)cell.x;
+            int zOrigin = (int)cell.y;
+            int ar = unit.attackRange;
+            var v2Unit = TileToCoordinate(new Vector2(xOrigin, zOrigin));
+            var v3Unit = new Vector3(v2Unit.x, 0, v2Unit.y);            
+            for (int xTarget = xOrigin - ar; xTarget <= xOrigin + ar; xTarget++)
+            {
+                for (int zTarget = zOrigin - ar; zTarget <= zOrigin + ar; zTarget++)
+                {
+                    //是否在攻击范围内
+                    if (Mathf.Abs(xTarget - xOrigin) + Mathf.Abs(zTarget - zOrigin) > ar) continue;
+                    if (xTarget == xOrigin && zTarget == zOrigin) continue;
+                    //单位所在点和目标点是否有障碍物
+                    var v2Target = TileToCoordinate(new Vector2(xTarget, zTarget));
+                    var v3Target = new Vector3(v2Target.x, 0, v2Target.y);
+                    
+                    if (Physics.Raycast(v3Unit, v3Target - v3Unit, Vector3.Distance(v3Unit, v3Target), maskObstacle) == true) continue;
+                    //加入列表
+                    var target = new Vector2(xTarget, zTarget);
+                    if (unit.AttackTiles.Contains(target)==false) 
+                        unit.AttackTiles.Add(target);
+                }
+            }
         }
     }
+    
     /// <summary>
     /// 展示单位的移动范围
     /// </summary>
@@ -214,6 +260,14 @@ public class Map : MonoBehaviour {
     public void ShowRange(Unit unit)
     {
         DrawCover(unit.MovementTiles, CoverType.Movement);
+        var attackTiles = new List<Vector2>();
+        foreach(var tile in unit.AttackTiles)
+        {
+            if (unit.MovementTiles.Contains(tile) == false && tile != unit.position) attackTiles.Add(tile);
+        }
+        DrawCover(attackTiles, CoverType.Attack);
+        
+        //DrawCover(unit.AttackTiles, CoverType.Attack);
     }
    
     public SortedDictionary<int,Vector2> FindPath(Unit unit,Vector2 dest)

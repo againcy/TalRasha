@@ -4,37 +4,18 @@ using System.Collections.Generic;
 using System.Linq;
 
 
-public enum TileType { Empty, Grass, Forest }
+
 [System.Serializable]
-public enum CoverType { Movement, Attack,Path }
-[System.Serializable]
-public class Tile
-{
-    public TileType type;
-    //public bool hasUnit;
-    //public int movementCost;
-    public Unit unit;
-    public bool obstacle;
-    public Tile()
-    {
-        type = TileType.Empty;
-        unit = null;
-        obstacle = false;
-        //hasUnit = false;
-        //movementCost = 1;
-    }
-    public int MovementCost(Unit unit)
-    {
-        if (obstacle == true) return 1000;
-        return 1;
-    }
-}
+public enum CoverType { Movement, Attack,Path,Selected,Attacking }
+
 public class Map : MonoBehaviour {
     public int lengthX;
     public int lengthZ;
     public GameObject coverMovement;
     public GameObject coverAttack;
-    public GameObject coverPath;
+    public GameObject markPath;
+    public GameObject markSelected;
+    public GameObject markAttacking;
 
     private LayerMask maskObstacle;
     private const float tileSize = 1.0f;
@@ -66,7 +47,7 @@ public class Map : MonoBehaviour {
         for (int i = 0; i < lengthX; i++)
             for (int j = 0; j < lengthZ; j++)
             {
-                if (tiles[i, j].unit != null) Debug.Log("tile pos: " + new Vector2(i, j) + ";  unit pos:" + tiles[i, j].unit.position);
+                //if (tiles[i, j].unit != null) Debug.Log("tile pos: " + new Vector2(i, j) + ";  unit pos:" + tiles[i, j].unit.position);
             }
     }
 
@@ -91,7 +72,7 @@ public class Map : MonoBehaviour {
         tiles[idx, idz].obstacle = true;
     }
 
-    public void SetUnit(Vector2 position, Unit unit)
+    public void SetUnit(Vector2 position, GameObject unit)
     {
         var idx = Mathf.FloorToInt(position.x);
         var idz = Mathf.FloorToInt(position.y);
@@ -143,7 +124,13 @@ public class Map : MonoBehaviour {
                     Instantiate(coverAttack, new Vector3(drawPos.x, -0.15f, drawPos.y), this.transform.rotation);
                     break;
                 case CoverType.Path:
-                    Instantiate(coverPath, new Vector3(drawPos.x, -0.1f, drawPos.y), this.transform.rotation);
+                    Instantiate(markPath, new Vector3(drawPos.x, -0.1f, drawPos.y), this.transform.rotation);
+                    break;
+                case CoverType.Selected:
+                    Instantiate(markSelected, new Vector3(drawPos.x, -0.09f, drawPos.y), this.transform.rotation);
+                    break;
+                case CoverType.Attacking:
+                    Instantiate(markAttacking, new Vector3(drawPos.x, -0.09f, drawPos.y), this.transform.rotation);
                     break;
             };
         }
@@ -153,9 +140,13 @@ public class Map : MonoBehaviour {
     /// 更新单位的移动范围
     /// </summary>
     /// <param name="unit"></param>
-    public void UpgradeMoveRange(Unit unit)
+    public void UpgradeMoveRange(GameObject unitObject)
     {
-        var visited = new int[lengthX, lengthZ];//0:无法到达 1:可移动 2:可攻击
+        var unit = unitObject.GetComponent<Unit>();
+        unit.MovementTiles = new List<Vector2>();
+        unit.MovementTiles.Add(unit.position);
+        if (unit.ActionMove == false) return;
+        var visited = new int[lengthX, lengthZ];//0:无法到达 1:可移动 2:友方单位占据
         //initialization
         for (int i = 0; i < lengthX; i++)
             for (int j = 0; j < lengthZ; j++)
@@ -199,21 +190,22 @@ public class Map : MonoBehaviour {
                         xNext = curx - 1; zNext = curz;
                         break;
                 }
+                var unitNext = Unit.GetUnitComponent(tiles[xNext, zNext].unit);
                 if (xNext < 0 || xNext >= lengthX || zNext < 0 || zNext >= lengthZ) continue;
-                if (tiles[xNext, zNext].unit != null && tiles[xNext, zNext].unit.playerID != unit.playerID) continue;
+                if (unitNext != null && unitNext.playerID != unit.playerID) continue;
                 if (visited[xNext, zNext] != 0) continue;
-                var nextMove = move - tiles[xNext,zNext].MovementCost(unit);
+                var nextMove = move - unit.MovementCost(tiles[xNext, zNext]);
                 if (nextMove < 0) continue;
                 visited[xNext, zNext] = 1;
                 if (nextMove != 0) queue.Enqueue(new Vector3(xNext, zNext, nextMove));
-                if (tiles[xNext, zNext].unit != null && tiles[xNext, zNext].unit.playerID == unit.playerID) visited[xNext, zNext] = 2;
+                if (unitNext != null && unitNext.playerID == unit.playerID) visited[xNext, zNext] = 2;
             }
         }
-        unit.MovementTiles = new List<Vector2>();
+        
         for (int i = 0; i < lengthX; i++)
             for (int j = 0; j < lengthZ; j++)
             {
-                if (visited[i, j] == 1) unit.MovementTiles.Add(new Vector2(i, j));
+                if (visited[i, j] != 0) unit.MovementTiles.Add(new Vector2(i, j));
             }
         //Debug.Log("unit upgrade range " + movementTiles.Count);
     }
@@ -222,56 +214,95 @@ public class Map : MonoBehaviour {
     /// 更新单位的攻击范围
     /// </summary>
     /// <param name="unit"></param>
-    public void UpgradeAttackRange(Unit unit)
+    public void UpgradeAttackRange(GameObject unitObject)
     {
+        var unit = Unit.GetUnitComponent(unitObject);
         unit.AttackTiles = new List<Vector2>();
+        unit.AttackArea = new List<Vector2>();
         foreach (var cell in unit.MovementTiles)
         {
             int xOrigin = (int)cell.x;
             int zOrigin = (int)cell.y;
-            int ar = unit.attackRange;
+            int arMax = unit.attackRange_max;
+            int arMin = unit.attackRange_min;
             var v2Unit = TileToCoordinate(new Vector2(xOrigin, zOrigin));
             var v3Unit = new Vector3(v2Unit.x, 0, v2Unit.y);            
-            for (int xTarget = xOrigin - ar; xTarget <= xOrigin + ar; xTarget++)
+            for (int xTarget = xOrigin - arMax; xTarget <= xOrigin + arMax; xTarget++)
             {
-                for (int zTarget = zOrigin - ar; zTarget <= zOrigin + ar; zTarget++)
+                for (int zTarget = zOrigin - arMax; zTarget <= zOrigin + arMax; zTarget++)
                 {
                     //是否在攻击范围内
-                    if (Mathf.Abs(xTarget - xOrigin) + Mathf.Abs(zTarget - zOrigin) > ar) continue;
+                    if (Mathf.Abs(xTarget - xOrigin) + Mathf.Abs(zTarget - zOrigin) > arMax ||
+                        Mathf.Abs(xTarget - xOrigin) + Mathf.Abs(zTarget - zOrigin) < arMin) continue;
                     if (xTarget == xOrigin && zTarget == zOrigin) continue;
                     //单位所在点和目标点是否有障碍物
                     var v2Target = TileToCoordinate(new Vector2(xTarget, zTarget));
                     var v3Target = new Vector3(v2Target.x, 0, v2Target.y);
-                    
                     if (Physics.Raycast(v3Unit, v3Target - v3Unit, Vector3.Distance(v3Unit, v3Target), maskObstacle) == true) continue;
                     //加入列表
                     var target = new Vector2(xTarget, zTarget);
                     if (unit.AttackTiles.Contains(target)==false) 
                         unit.AttackTiles.Add(target);
+                    //更新attack area
+                    if (cell == unit.position)
+                    {
+                        if (unit.AttackArea.Contains(target) == false)
+                            unit.AttackArea.Add(target);
+                    }
                 }
             }
         }
     }
     
+
     /// <summary>
-    /// 展示单位的移动范围
+    /// 展示单位的移动/攻击范围
     /// </summary>
     /// <param name="unit"></param>
-    public void ShowRange(Unit unit)
+    public void ShowRange(GameObject unitObject,bool orderAttack)
     {
-        DrawCover(unit.MovementTiles, CoverType.Movement);
-        var attackTiles = new List<Vector2>();
-        foreach(var tile in unit.AttackTiles)
+        var unit = unitObject.GetComponent<Unit>();
+        if (orderAttack == true)
         {
-            if (unit.MovementTiles.Contains(tile) == false && tile != unit.position) attackTiles.Add(tile);
+            if (unit.ActionAttack == true)
+            {
+                //Debug.Log("show attack");
+                //命令攻击 且 可以攻击
+                DrawCover(unit.AttackArea, CoverType.Attack);
+            }
+            else return;
         }
-        DrawCover(attackTiles, CoverType.Attack);
-        
-        //DrawCover(unit.AttackTiles, CoverType.Attack);
+        else
+        {
+            //没有命令攻击
+            if (unit.ActionMove == true && unit.ActionAttack == true)
+            {
+                //可以移动 且 可以攻击
+                DrawCover(unit.MovementTiles, CoverType.Movement);
+                var attackTiles = new List<Vector2>();
+                foreach (var tile in unit.AttackTiles)
+                {
+                    if (unit.MovementTiles.Contains(tile) == false && tile != unit.position) attackTiles.Add(tile);
+                }
+                DrawCover(attackTiles, CoverType.Attack);
+            }
+            else if (unit.ActionMove == false && unit.ActionAttack == true)
+            {
+                //不能移动 且 可以攻击
+                DrawCover(unit.AttackArea, CoverType.Attack);
+            }
+            else if (unit.ActionMove == true && unit.ActionAttack == false)
+            {
+                //可以移动 且 不能攻击
+                DrawCover(unit.MovementTiles, CoverType.Movement);
+            }
+            else return;
+        }
     }
    
-    public SortedDictionary<int,Vector2> FindPath(Unit unit,Vector2 dest)
+    public SortedDictionary<int,Vector2> FindPath(GameObject unitObject,Vector2 dest)
     {
+        var unit = unitObject.GetComponent<Unit>();
         //A*寻路
         return Astar.FindPath(unit, tiles, dest, lengthX, lengthZ);
         //DrawCover(ret, CoverType.Path);

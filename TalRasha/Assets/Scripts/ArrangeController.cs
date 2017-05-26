@@ -14,28 +14,33 @@ public class ArrangeController : MonoBehaviour
     //public Canvas canvas;
     public List<GameObject> areaNoClick;
 
-    private Dictionary<string, GameObject> unitType;//use unit name as key to store unitTypeList
+    private Dictionary<string, GameObject> unitList;//use unit name as key to store unitTypeList
     private GameController gameController;
     private Map map;
     private Vector2 pointedTile;
-    private bool putBlue;
-    private bool putRed;
-    private bool putObs;
+    private int color;
+    private bool putFootman;
+    private bool putArcher;
+    //private bool putBlue;
+    //private bool putRed;
+    //private bool putObs;
 
     private bool gameStart;
 
     void Start ()
 	{
+        color = 0;
+        ClearFlags();
         gameStart = false;
         gameController = gameControllerObject.GetComponent<GameController>();
         map = chessboard.GetComponent<Map>();
         //载入unit
-        unitType = new Dictionary<string, GameObject>();
+        unitList = new Dictionary<string, GameObject>();
         foreach (var unitObject in unitObjects)
         {
-            var unit = unitObject.GetComponent<Unit>();
-            if (unitType.ContainsKey(unit.name) == true) continue;
-            unitType.Add(unit.name, unitObject);
+            //var unit = unitObject.GetComponent<Unit>();
+            //if (unitList.ContainsKey(unit.name) == true) continue;
+            unitList.Add(unitObject.name, unitObject);
         }
         GUIArrange.SetActive(true);
         GUIUnit.SetActive(false);
@@ -50,9 +55,19 @@ public class ArrangeController : MonoBehaviour
 
     void ClearFlags()
     {
+        putFootman = false;
+        putArcher = false;
+        /*
         putBlue = false;
         putRed = false;
         putObs = false;
+        */
+    }
+
+    public void OnButton_switchColor()
+    {
+        color++;
+        color = color % 2;
     }
 
     /// <summary>
@@ -61,21 +76,27 @@ public class ArrangeController : MonoBehaviour
     /// <param name="type"></param>
     public void OnButton_putUnit(int type)
     {
-        if (type == 1)
+        ClearFlags();
+        string player;
+        if (color == 0) player = "blue";
+        else player = "red";
+        if (type == 0)
         {
-            putBlue = true;
-            textInfo.text = "Putting Blue";
+            putFootman = true;
+            textInfo.text = "Setting Footman " + player;
         }
-        else if (type == 2)
+        else if (type == 1)
         {
-            putRed = true;
-            textInfo.text = "Putting Red";
+            putArcher = true;
+            textInfo.text = "Setting Archer " + player;
         }
+        /*
         else if (type == 0)
         {
             putObs = true;
             textInfo.text = "Putting Obstacle";
         }
+        */
     }
 
     /// <summary>
@@ -86,7 +107,7 @@ public class ArrangeController : MonoBehaviour
     void SetUnit(Vector2 position)
     {
         var tile = map.GetTile(position);
-        string unitName = "";
+        string objectName = "";
         //放置单位
         if (tile.unit != null)
         {
@@ -95,20 +116,23 @@ public class ArrangeController : MonoBehaviour
         }
         else
         {
-            if (putRed == true) unitName = "UnitRed";
-            else if (putBlue == true) unitName = "UnitBlue";
-            else if (putObs == true) unitName = "Obstacle";
+            if (putFootman == true && color == 0) objectName = "FootmanBlue";
+            else if (putFootman == true && color == 1) objectName = "FootmanRed";
+            else if (putArcher == true && color == 0) objectName = "ArcherBlue";
+            else if (putArcher == true && color == 1) objectName = "ArcherRed";
+            //else if (putObs == true) unitName = "Obstacle";
             textInfo.text = "";
         }
         //testFlag = false;
         var coordinate = map.TileToCoordinate(position);
         //Debug.Log(coordinate);
-        var unitObject = (GameObject)Instantiate(unitType[unitName], new Vector3(coordinate.x, 0, coordinate.y), Quaternion.identity);
+        var unitObject = (GameObject)Instantiate(unitList[objectName], new Vector3(coordinate.x, 0, coordinate.y), Quaternion.identity);
         var unit = unitObject.GetComponent<Unit>();
-        if (unit.unitName == "Obstacle") map.SetObstacle(position);
+        if (unit.UnitName == "Obstacle") map.SetObstacle(position);
         else unit.position = position;
         map.SetUnit(unit.position, unitObject);
-        ClearFlags();
+        unit.playerID = color;
+        //ClearFlags();
         //unit.NewTurn();
         //UpgradeAllUnits();
     }
@@ -116,6 +140,10 @@ public class ArrangeController : MonoBehaviour
     void Update()
     {
         if (gameStart == true) return;
+        if (putFootman == true && color == 0) textInfo.text = "Setting Footman Blue";
+        else if (putFootman == true && color == 1) textInfo.text = "Setting Footman Red";
+        else if (putArcher == true && color == 0) textInfo.text = "Setting Archer Blue";
+        else if (putArcher == true && color == 1) textInfo.text = "Setting Archer Red";
         if (Input.GetMouseButtonDown(0) == true)
         {
             var mouse = Input.mousePosition;
@@ -126,7 +154,7 @@ public class ArrangeController : MonoBehaviour
                 if (area.Contains(new Vector2(mouse.x, mouse.y))) return;
             }  
             pointedTile = gameController.GetPointedTile();
-            if (putBlue || putRed || putObs) SetUnit(pointedTile);
+            if (putArcher || putFootman) SetUnit(pointedTile);
         }
     }
 }

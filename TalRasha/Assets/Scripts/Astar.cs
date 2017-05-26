@@ -139,11 +139,11 @@ public static class Astar
                         xNext = cur.x - 1; zNext = cur.z;
                         break;
                 }
-
-                var unitNext = Unit.GetUnitComponent(tiles[xNext, zNext].unit);
                 if (xNext < 0 || xNext >= lengthX || zNext < 0 || zNext >= lengthZ) continue;//超越地图边界
+                var unitNext = Unit.GetUnitComponent(tiles[xNext, zNext].unit);//下一格可能遇到的unit
+                
                 if (unitNext != null && unitNext.playerID != unit.playerID) continue;
-                var GNext = cur.G + unit.MovementCost(tiles[xNext, zNext]);
+                var GNext = cur.G + unit.GetMovementCost(tiles[xNext, zNext]);
                 if (GNext > unit.movement) continue;//移动力无法到达
                 if (IsInCloseList(xNext, zNext) == true) continue;
                 if (IsInOpenList(xNext, zNext) == false)

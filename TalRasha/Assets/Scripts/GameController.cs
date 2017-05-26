@@ -31,6 +31,7 @@ public class GameController : MonoBehaviour {
     public Text textTurn;
     public Text textUnitInfo;
     public int playerCnt;
+    private Dictionary<int, string> playerName;
     public List<GameObject> areaNoClick;
     
     private LayerMask maskMap;
@@ -48,7 +49,15 @@ public class GameController : MonoBehaviour {
     private int curMovingID;
     private int endMovingID;
     private bool moving;
-    private int turn;
+    private TurnCounter turnCnter;
+    public TurnCounter TurnCnter
+    {
+        get
+        {
+            return turnCnter;
+        }
+    }
+    
     private Vector2 pointedTile;
     private bool gameStart;
 
@@ -57,6 +66,7 @@ public class GameController : MonoBehaviour {
 
     // Use this for initialization
     void Start () {
+        GeneratePlayerName();
         flagUpdate = false;
         map = chessboard.GetComponent<Map>();
         mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
@@ -67,12 +77,20 @@ public class GameController : MonoBehaviour {
         moving = false;
 
         textInfo.text = "";
-        textTurn.text = "Turn Blue";
+        textTurn.text = "Turn: 1, Player: "+playerName[0];
         textUnitInfo.text = "";
 
-        turn = 0;
+        turnCnter = new TurnCounter();
+        turnCnter.StartTurn(playerCnt);
         gameStart = false;
         //testFlag = true;
+    }
+
+    public void GeneratePlayerName()
+    {
+        playerName = new Dictionary<int, string>();
+        playerName.Add(0, "blue");
+        playerName.Add(1, "red");
     }
 
     
@@ -90,10 +108,8 @@ public class GameController : MonoBehaviour {
 
     public void NextTurn()
     {
-        turn++;
-        if (turn % playerCnt == 0) textTurn.text = "Turn " + turn + " Blue";
-        else textTurn.text = "Turn " + turn + " Red";
-
+        turnCnter.Next();
+        textTurn.text = "Turn: " + turnCnter.CurTurn + ", Player: " +playerName[ turnCnter.CurPlayer];
         foreach (var gameObject in GameObject.FindGameObjectsWithTag("Unit"))
         {
             var unit = gameObject.GetComponent<Unit>();
@@ -117,10 +133,11 @@ public class GameController : MonoBehaviour {
         else
         {
             var unitSelected = Unit.GetUnitComponent(unitObjectSelected);
-            if (unitSelected.playerID == turn % playerCnt)
+            if (unitSelected.playerID == turnCnter.CurPlayer)
             {
                 if (unitSelected.ActionAttack == true && buttonAttack.enabled == false) buttonAttack.enabled = true;
-                if (unitSelected.ActionMove == true && buttonStay.enabled == false) buttonStay.enabled = true;
+                if (unitSelected.ActionMove == false && unitSelected.ActionAttack == false) buttonStay.enabled = false;
+                else buttonStay.enabled = true;
             }
             else
             {
@@ -138,7 +155,7 @@ public class GameController : MonoBehaviour {
         if (order == "attack")
         {
             //attack
-            Debug.Log("attack  button");
+            //Debug.Log("attack  button");
             orders.orderAttack = true;
             if (unitSelected == null) orders.orderAttack = false;
         }
@@ -168,7 +185,7 @@ public class GameController : MonoBehaviour {
     /// </summary>
     void UpdateAllUnits()
     {
-        Debug.Log(GameObject.FindGameObjectsWithTag("Unit").Count());
+       // Debug.Log(GameObject.FindGameObjectsWithTag("Unit").Count());
         var units = new List<GameObject>();
         map.ClearTileUnit();
         foreach (var gameObject in GameObject.FindGameObjectsWithTag("Unit"))
@@ -176,19 +193,21 @@ public class GameController : MonoBehaviour {
             var unit = gameObject.GetComponent<Unit>();
             map.SetUnit(unit.position, gameObject);
             units.Add(gameObject);
+            unit.CheckBuff();
             //Debug.Log(unit.position);
         }
         foreach (var unit in units)
         {
             map.UpgradeMoveRange(unit);
             map.UpgradeAttackRange(unit);
+            unit.GetComponent<Unit>().AddTileBuff();
         }
     }
    
     /// <summary>
     /// 攻击
     /// </summary>
-    void Attack()
+    void LaunchAttack()
     {
         var unitSelected = Unit.GetUnitComponent(unitObjectSelected);
 
@@ -199,14 +218,15 @@ public class GameController : MonoBehaviour {
             if (unitTarget != null && unitTarget.playerID != unitSelected.playerID)
             {
                 //可以攻击
-                var ap = unitSelected.AttackPoint(map, unitTarget.position);
-                var survive = unitTarget.HitBy(map, ap);
-                if (survive == false)
+                //获取unitSelected对targetTile发动的普通攻击
+                var attack = unitSelected.GetAttackNormal(targetTile);
+                unitTarget.TakeDamage(attack);
+                
+                if (unitTarget.HPCur <= 0)
                 {
                     //单位死亡
                     //Debug.Log(targetTile.unit);
                     unitTarget.DestroyUnit();
-                    
                     //Debug.Log(targetTile.unit);
                 }
                 unitSelected.ActionAttack = false;
@@ -225,7 +245,7 @@ public class GameController : MonoBehaviour {
     void CheckUnitMove()
     {
         var unitSelected = Unit.GetUnitComponent(unitObjectSelected);
-        if (unitSelected.playerID == turn % playerCnt && unitSelected.ActionMove == true)
+        if (unitSelected.playerID == turnCnter.CurPlayer && unitSelected.ActionMove == true)
         {
             if (unitSelected.MovementTiles.Contains(pointedTile) == true && map.GetTile(pointedTile).unit==null)
             {
@@ -295,7 +315,7 @@ public class GameController : MonoBehaviour {
                 //有指令则执行指令
                 if (orders.orderAttack == true && unitSelected.ActionAttack == true)
                 {
-                    Attack();
+                    LaunchAttack();
                     //unitObjectSelected = null;
                     return;
                 }
@@ -313,7 +333,7 @@ public class GameController : MonoBehaviour {
     {
         var unitSelected = Unit.GetUnitComponent(unitObjectSelected);
         //Debug.Log(orders.AllFalse());
-        if (unitSelected != null && orders.AllFalse() == true && unitSelected.ActionMove == true && unitSelected.playerID == turn % playerCnt)
+        if (unitSelected != null && orders.AllFalse() == true && unitSelected.ActionMove == true && unitSelected.playerID == turnCnter.CurPlayer)
         {
             //选中可移动的单位，且没有其它指令，则移动
             CheckUnitMove();
@@ -383,13 +403,26 @@ public class GameController : MonoBehaviour {
         var unitSelected = Unit.GetUnitComponent(unitObjectSelected);
         if (unitSelected != null)
         {
-            textUnitInfo.text = unitSelected.unitName + " at " + unitSelected.position
-                + "\n HP " + unitSelected.HPCur
-                + "\n AP " + unitSelected.APCur
+            //unitSelected.CheckBuff();
+            
+            var attOrigin = unitSelected.attAfterLevel;
+            var attBuff = unitSelected.attAfterBuff - attOrigin;
+
+            textUnitInfo.text = unitSelected.UnitName + " at " + unitSelected.position
+                + "\n HP: " + unitSelected.HPCur + "/" + attOrigin.hp
+                + "\n PhyAtk " + attOrigin.phyAtk + "+" + attBuff.phyAtk
+                + "\n PhyDef " + attOrigin.phyDef + "+" + attBuff.phyDef
+                + "\n MgkAtk " + attOrigin.mgkAtk + "+" + attBuff.mgkAtk
+                + "\n MgkDef " + attOrigin.mgkDef + "+" + attBuff.mgkDef
+                + "\n AtkRange" + attOrigin.minAtkRange + "-" + attOrigin.maxAtkRange + "+" + attBuff.minAtkRange + "-" + attBuff.maxAtkRange
                 + "\n Can Move " + unitSelected.ActionMove
                 + "\n Can Attack " + unitSelected.ActionAttack
                 //+ "\n Move Order " + orders.orderMove
                 + "\n Attack Order " + orders.orderAttack;
+            foreach(var buff in unitSelected.BuffList)
+            {
+                textUnitInfo.text += "\n" + buff.buffName;
+            }
         }
         else
         {
@@ -413,7 +446,7 @@ public class GameController : MonoBehaviour {
             //在移动模式中更新路径标识
             if (orders.orderAttack == false && unitSelected.ActionMove == true)
             {
-                if (unitSelected.MovementTiles.Contains(pointedTile) && unitSelected.playerID == turn % playerCnt)
+                if (unitSelected.MovementTiles.Contains(pointedTile) && unitSelected.playerID == turnCnter.CurPlayer)
                 {
                     map.ClearCover("Mark");
                     path = map.FindPath(unitObjectSelected, pointedTile);

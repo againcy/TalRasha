@@ -15,6 +15,13 @@ public class Tile
         unit = null;
         obstacle = false;
     }
+    public Buff TileBuff()
+    {
+        if (type == TileType.Empty) return null;
+        else if (type == TileType.Forest) return null;
+        else if (type == TileType.Grass) return new Buff_Grass();
+        else return null;
+    }
     
     
 }

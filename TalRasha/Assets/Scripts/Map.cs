@@ -30,6 +30,7 @@ public class Map : MonoBehaviour {
             for (int j = 0; j < lengthZ; j++)
             {
                 tiles[i, j] = new Tile();
+                if (i % 2 == 0) tiles[i, j].type = TileType.Grass;//****************test******************
             }
         maskObstacle = 1 << LayerMask.NameToLayer("Obstacle");
     }
@@ -190,11 +191,12 @@ public class Map : MonoBehaviour {
                         xNext = curx - 1; zNext = curz;
                         break;
                 }
-                var unitNext = Unit.GetUnitComponent(tiles[xNext, zNext].unit);
                 if (xNext < 0 || xNext >= lengthX || zNext < 0 || zNext >= lengthZ) continue;
+                var unitNext = Unit.GetUnitComponent(tiles[xNext, zNext].unit);
+                
                 if (unitNext != null && unitNext.playerID != unit.playerID) continue;
                 if (visited[xNext, zNext] != 0) continue;
-                var nextMove = move - unit.MovementCost(tiles[xNext, zNext]);
+                var nextMove = move - unit.GetMovementCost(tiles[xNext, zNext]);
                 if (nextMove < 0) continue;
                 visited[xNext, zNext] = 1;
                 if (nextMove != 0) queue.Enqueue(new Vector3(xNext, zNext, nextMove));
@@ -219,12 +221,12 @@ public class Map : MonoBehaviour {
         var unit = Unit.GetUnitComponent(unitObject);
         unit.AttackTiles = new List<Vector2>();
         unit.AttackArea = new List<Vector2>();
+        int arMax = unit.attAfterBuff.maxAtkRange;
+        int arMin = unit.attAfterBuff.minAtkRange;
         foreach (var cell in unit.MovementTiles)
         {
             int xOrigin = (int)cell.x;
             int zOrigin = (int)cell.y;
-            int arMax = unit.attackRange_max;
-            int arMin = unit.attackRange_min;
             var v2Unit = TileToCoordinate(new Vector2(xOrigin, zOrigin));
             var v3Unit = new Vector3(v2Unit.x, 0, v2Unit.y);            
             for (int xTarget = xOrigin - arMax; xTarget <= xOrigin + arMax; xTarget++)
